@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Interactive Tesseract Viewer</title>
+  <style>
+    body{margin:0;overflow:hidden;background:#111;color:#fff;font-family:sans-serif}
+    #info{position:fixed;top:0;left:0;padding:8px 12px;font-size:14px}
+  </style>
+</head>
+<body>
+<div id="info">Arrastra / rueda para rotar y hacer zoom • Hipercubo 4D ▶ 3D</div>
+
+<!-- Three.js + OrbitControls desde CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/* ------------------------------------------
+   1.  Escena básica
+------------------------------------------ */
+const scene   = new THREE.Scene();
+const camera  = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(4,4,6);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+/* ------------------------------------------
+   2.  Generar los 16 vértices 4D (±1,±1,±1,±1)
+------------------------------------------ */
+const verts4D = [];
+for (let i = 0; i < 16; i++) {
+  const x = (i & 1) ? 1 : -1;
+  const y = (i & 2) ? 1 : -1;
+  const z = (i & 4) ? 1 : -1;
+  const w = (i & 8) ? 1 : -1;
+  verts4D.push(new THREE.Vector4(x, y, z, w));
+}
+
+/* ------------------------------------------
+   3.  Conexiones (aristas) → pares de índices
+------------------------------------------ */
+const edgePairs = [];
+for (let i = 0; i < 16; i++) {
+  for (let j = i + 1; j < 16; j++) {
+    if ([1,2,4,8].includes(i ^ j)) edgePairs.push([i, j]); // difieren en EXACTAMENTE 1 bit
+  }
+}
+
+/* ------------------------------------------
+   4.  BufferGeometry para las líneas
+------------------------------------------ */
+const posArr = new Float32Array(edgePairs.length * 2 * 3); // 2 puntos × 3 coords
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+const material = new THREE.LineBasicMaterial({color:0x00ffff});
+const wireframe = new THREE.LineSegments(geometry, material);
+scene.add(wireframe);
+
+/* ------------------------------------------
+   5.  Proyección 4D→3D (perspectiva simple)
+------------------------------------------ */
+function project(v){
+  // distancia “cámara” en w
+  const d = 4;
+  const factor = d / (d - v.w); // mientras w→d, factor→∞ (perspectiva)
+  return new THREE.Vector3(v.x*factor, v.y*factor, v.z*factor);
+}
+
+/* ------------------------------------------
+   6.  Rotaciones 4D (dos ejes cualesquiera)
+------------------------------------------ */
+function rotate4D(axis1, axis2, angle){
+  const sin = Math.sin(angle), cos = Math.cos(angle);
+  for (const v of verts4D){
+    const a = v[axis1], b = v[axis2];
+    v[axis1] = a*cos - b*sin;
+    v[axis2] = a*sin + b*cos;
+  }
+}
+
+/* ------------------------------------------
+   7.  Animación
+------------------------------------------ */
+function animate(){
+  requestAnimationFrame(animate);
+
+  // rotamos en dos planos hiperdimensionales distintos
+  rotate4D('x', 'w', 0.006);
+  rotate4D('y', 'z', 0.004);
+
+  // actualizar posiciones proyectadas → buffer
+  let idx = 0;
+  for (const [i, j] of edgePairs){
+    const p1 = project(verts4D[i]);
+    const p2 = project(verts4D[j]);
+    posArr[idx++] = p1.x; posArr[idx++] = p1.y; posArr[idx++] = p1.z;
+    posArr[idx++] = p2.x; posArr[idx++] = p2.y; posArr[idx++] = p2.z;
+  }
+  geometry.attributes.position.needsUpdate = true;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ------------------------------------------
+   8.  Responsive
+------------------------------------------ */
+addEventListener('resize', () =>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
