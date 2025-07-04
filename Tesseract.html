@@ -1,109 +1,99 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Tesseract 4D Viewer</title>
+  <title>Hypercube Viewer</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
-    #info { position: absolute; top: 0; left: 0; padding: 10px; font-size: 14px; z-index: 1; }
+    body { margin: 0; background: black; overflow: hidden; }
+    canvas { display: block; }
   </style>
 </head>
 <body>
-<div id="info">🎮 Arrastra para rotar, usa scroll para acercar/alejar — Visualizador 4D ➜ 3D</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.min.js"></script>
+<script>
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(3, 3, 6);
 
-<!-- Three.js y OrbitControls con 'defer' para evitar errores -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.min.js" defer></script>
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
 
-<!-- Tu código JavaScript -->
-<script defer>
-document.addEventListener('DOMContentLoaded', () => {
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(4, 4, 6);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+// --- Generar los vértices del hipercubo en 4D ---
+const verts4D = [];
+for (let i = 0; i < 16; i++) {
+  verts4D.push(new THREE.Vector4(
+    (i & 1) ? 1 : -1,
+    (i & 2) ? 1 : -1,
+    (i & 4) ? 1 : -1,
+    (i & 8) ? 1 : -1
+  ));
+}
 
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-
-  // --- Vértices del tesseracto en 4D ---
-  const verts4D = [];
-  for (let i = 0; i < 16; i++) {
-    verts4D.push(new THREE.Vector4(
-      (i & 1) ? 1 : -1,
-      (i & 2) ? 1 : -1,
-      (i & 4) ? 1 : -1,
-      (i & 8) ? 1 : -1
-    ));
+// --- Aristas entre vértices conectados por 1 eje ---
+const edges = [];
+for (let i = 0; i < 16; i++) {
+  for (let j = i + 1; j < 16; j++) {
+    if ([1,2,4,8].includes(i ^ j)) edges.push([i, j]);
   }
+}
 
-  // --- Conexiones (aristas) entre vértices que difieren en 1 eje ---
-  const edges = [];
-  for (let i = 0; i < 16; i++) {
-    for (let j = i + 1; j < 16; j++) {
-      if ([1,2,4,8].includes(i ^ j)) edges.push([i, j]);
-    }
-  }
+// --- Crear línea con BufferGeometry ---
+const pos = new Float32Array(edges.length * 2 * 3); // 2 vértices por arista × 3 coords
+const geom = new THREE.BufferGeometry();
+geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+const lines = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color: 0x00ffff }));
+scene.add(lines);
 
-  // --- Geometría de líneas 3D ---
-  const posArray = new Float32Array(edges.length * 2 * 3);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-  const material = new THREE.LineBasicMaterial({ color: 0x00ffff });
-  const lines = new THREE.LineSegments(geometry, material);
-  scene.add(lines);
+// --- Proyección de 4D a 3D ---
+function project(v) {
+  const d = 3.5;
+  const f = d / (d - v.w);
+  return new THREE.Vector3(v.x * f, v.y * f, v.z * f);
+}
 
-  // --- Proyección 4D → 3D ---
-  function project4Dto3D(v) {
-    const d = 4; // distancia de "cámara" en w
-    const factor = d / (d - v.w);
-    return new THREE.Vector3(v.x * factor, v.y * factor, v.z * factor);
-  }
+// --- Rotaciones 4D básicas ---
+function rotate(v, a1, a2, theta) {
+  const c = Math.cos(theta), s = Math.sin(theta);
+  const A = v[a1], B = v[a2];
+  v[a1] = A * c - B * s;
+  v[a2] = A * s + B * c;
+}
 
-  // --- Rotación en dos planos hiperdimensionales ---
-  function rotate4D(vector, axis1, axis2, angle) {
-    const s = Math.sin(angle), c = Math.cos(angle);
-    const A = vector[axis1], B = vector[axis2];
-    vector[axis1] = A * c - B * s;
-    vector[axis2] = A * s + B * c;
-  }
+// --- Animación ---
+function animate() {
+  requestAnimationFrame(animate);
 
-  // --- Animación principal ---
-  function animate() {
-    requestAnimationFrame(animate);
-
-    // Rotar en planos XW y YZ
-    verts4D.forEach(v => {
-      rotate4D(v, 'x', 'w', 0.01);
-      rotate4D(v, 'y', 'z', 0.008);
-    });
-
-    // Proyectar vértices y actualizar posiciones
-    let i = 0;
-    for (const [a, b] of edges) {
-      const v1 = project4Dto3D(verts4D[a]);
-      const v2 = project4Dto3D(verts4D[b]);
-      posArray[i++] = v1.x; posArray[i++] = v1.y; posArray[i++] = v1.z;
-      posArray[i++] = v2.x; posArray[i++] = v2.y; posArray[i++] = v2.z;
-    }
-
-    geometry.attributes.position.needsUpdate = true;
-
-    controls.update();
-    renderer.render(scene, camera);
-  }
-
-  animate();
-
-  // --- Adaptar a cambios de tamaño de ventana ---
-  window.addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+  // Rotar en dos planos del hipercubo
+  verts4D.forEach(v => {
+    rotate(v, 'x', 'w', 0.01);
+    rotate(v, 'y', 'z', 0.008);
   });
+
+  // Actualizar geometría
+  let idx = 0;
+  for (const [i, j] of edges) {
+    const p1 = project(verts4D[i]);
+    const p2 = project(verts4D[j]);
+    pos[idx++] = p1.x; pos[idx++] = p1.y; pos[idx++] = p1.z;
+    pos[idx++] = p2.x; pos[idx++] = p2.y; pos[idx++] = p2.z;
+  }
+
+  geom.attributes.position.needsUpdate = true;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
 });
 </script>
 </body>
