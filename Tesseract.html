@@ -9,92 +9,72 @@
   </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.min.js"></script>
+<canvas id="c"></canvas>
 <script>
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(3, 3, 6);
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-document.body.appendChild(renderer.domElement);
-
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-
-// --- Generar los vértices del hipercubo en 4D ---
 const verts4D = [];
-for (let i = 0; i < 16; i++) {
-  verts4D.push(new THREE.Vector4(
-    (i & 1) ? 1 : -1,
-    (i & 2) ? 1 : -1,
-    (i & 4) ? 1 : -1,
-    (i & 8) ? 1 : -1
-  ));
+for(let i=0;i<16;i++){
+  verts4D.push({
+    x: (i & 1) ? 1 : -1,
+    y: (i & 2) ? 1 : -1,
+    z: (i & 4) ? 1 : -1,
+    w: (i & 8) ? 1 : -1
+  });
 }
 
-// --- Aristas entre vértices conectados por 1 eje ---
 const edges = [];
-for (let i = 0; i < 16; i++) {
-  for (let j = i + 1; j < 16; j++) {
-    if ([1,2,4,8].includes(i ^ j)) edges.push([i, j]);
+for(let i=0;i<16;i++){
+  for(let j=i+1;j<16;j++){
+    if([1,2,4,8].includes(i ^ j)) edges.push([i,j]);
   }
 }
 
-// --- Crear línea con BufferGeometry ---
-const pos = new Float32Array(edges.length * 2 * 3); // 2 vértices por arista × 3 coords
-const geom = new THREE.BufferGeometry();
-geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-const lines = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color: 0x00ffff }));
-scene.add(lines);
-
-// --- Proyección de 4D a 3D ---
-function project(v) {
+function project4Dto3D(v){
   const d = 3.5;
-  const f = d / (d - v.w);
-  return new THREE.Vector3(v.x * f, v.y * f, v.z * f);
+  const f = d/(d - v.w);
+  return { x: v.x * f, y: v.y * f, z: v.z * f };
 }
 
-// --- Rotaciones 4D básicas ---
-function rotate(v, a1, a2, theta) {
+function rotate(v, a1, a2, theta){
   const c = Math.cos(theta), s = Math.sin(theta);
   const A = v[a1], B = v[a2];
   v[a1] = A * c - B * s;
   v[a2] = A * s + B * c;
 }
 
-// --- Animación ---
-function animate() {
+function project3Dto2D(v){
+  const scale = 300/(v.z + 5);
+  return { x: v.x * scale + canvas.width / 2, y: v.y * scale + canvas.height / 2 };
+}
+
+function animate(){
   requestAnimationFrame(animate);
-
-  // Rotar en dos planos del hipercubo
-  verts4D.forEach(v => {
-    rotate(v, 'x', 'w', 0.01);
-    rotate(v, 'y', 'z', 0.008);
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  verts4D.forEach(v=>{
+    rotate(v,'x','w',0.01);
+    rotate(v,'y','z',0.008);
   });
-
-  // Actualizar geometría
-  let idx = 0;
-  for (const [i, j] of edges) {
-    const p1 = project(verts4D[i]);
-    const p2 = project(verts4D[j]);
-    pos[idx++] = p1.x; pos[idx++] = p1.y; pos[idx++] = p1.z;
-    pos[idx++] = p2.x; pos[idx++] = p2.y; pos[idx++] = p2.z;
+  const pts = verts4D.map(v=>project3Dto2D(project4Dto3D(v)));
+  ctx.strokeStyle = 'cyan';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for(const [i,j] of edges){
+    const p1 = pts[i], p2 = pts[j];
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
   }
-
-  geom.attributes.position.needsUpdate = true;
-
-  controls.update();
-  renderer.render(scene, camera);
+  ctx.stroke();
 }
 animate();
-
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
 </script>
 </body>
 </html>
